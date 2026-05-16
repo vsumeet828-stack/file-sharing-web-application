@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Urbanist", ui-sans-serif, system-ui, sans-serif;
+  --color-primary: #6EA8FE;
+  --color-primary-dark: #4d91f7;
+  --color-secondary: #8EC5FC;
+  --color-accent: #E0E7FF;
+  --color-surface: #FFFFFF;
+  --color-background: #F5F7FB;
+  --color-text-main: #111827;
+  --color-text-muted: #6B7280;
+  --radius-xl: 1.5rem;
+  --radius-2xl: 2rem;
+
+  --animate-float: float 6s ease-in-out infinite;
+
+  @keyframes float {
+
+    0%,
+    100% {
+      transform: translateY(0px);
+    }
+
+    50% {
+      transform: translateY(-20px);
+    }
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-background text-text-main antialiased selection:bg-primary/20 selection:text-primary-dark;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply text-text-main font-bold tracking-tight;
+  }
+}
+
+@utility glass {
+  background-color: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+@utility glass-card {
+  @apply glass rounded-3xl p-6 transition-all duration-500 shadow-sm;
+
+  &:hover {
+    @apply shadow-xl shadow-primary/5 translate-y-[-4px] bg-white/90;
+    border-color: rgba(110, 168, 254, 0.2);
+  }
+}
+
+@utility premium-card {
+  @apply bg-white rounded-[2.5rem] p-8 transition-all duration-500 border border-black/[0.03] shadow-[0_8px_30px_rgba(0, 0, 0, 0.02)];
+
+  &:hover {
+    @apply shadow-[0_20px_50px_rgba(110, 168, 254, 0.15)] translate-y-[-8px];
+  }
+}
+
+@utility btn-primary {
+  @apply bg-primary text-white px-8 py-3.5 rounded-2xl font-bold shadow-lg shadow-primary/25 hover:bg-primary-dark hover:scale-[1.02] active:scale-95 transition-all;
+}
+
+@utility btn-secondary {
+  @apply bg-white text-text-main px-8 py-3.5 rounded-2xl font-bold border border-black/[0.05] shadow-sm hover:bg-gray-50 hover:scale-[1.02] active:scale-95 transition-all;
+}
+
+@utility hero-gradient {
+  background: radial-gradient(circle at 50% 50%, rgba(110, 168, 254, 0.08) 0%, rgba(245, 247, 251, 0) 70%);
+}
+
+@utility text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-primary-dark;
+}

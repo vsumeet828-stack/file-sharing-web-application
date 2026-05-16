@@ -1,0 +1,17 @@
+{
+  "name": "DropX - Instant File Sharing",
+  "short_name": "DropX",
+  "description": "Professional-grade real-time file sharing and cloud storage.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#8b5cf6",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3248/3248143.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

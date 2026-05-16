@@ -1,0 +1,86 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+
+    // User Rules
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.keys().hasAll(['uid', 'email', 'storageUsed', 'storageLimit', 'isPremium', 'createdAt'])
+          && data.uid == request.auth.uid 
+          && data.email is string && data.email.size() <= 255
+          && data.storageUsed is number
+          && data.storageLimit is number
+          && data.isPremium is bool
+          && (data.displayName == null || data.displayName is string)
+          && (data.photoURL == null || data.photoURL is string)
+          && data.createdAt == request.time;
+      }
+      
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming()) && incoming().storageUsed == 0;
+      allow update: if isOwner(userId) 
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && (incoming().diff(existing()).affectedKeys().hasOnly(['storageUsed', 'displayName', 'photoURL', 'isPremium']))
+        && (incoming().isPremium == existing().isPremium || isAdmin())
+        && incoming().storageUsed >= 0;
+    }
+
+    // File Rules
+    match /files/{fileId} {
+      function isValidFile(data) {
+        return data.keys().hasAll(['id', 'ownerId', 'name', 'size', 'type', 'url', 'path', 'createdAt'])
+          && data.ownerId == request.auth.uid
+          && data.name is string && data.name.size() >= 1 && data.name.size() <= 255
+          && data.size is number && data.size >= 0
+          && data.type is string && data.type.size() <= 100
+          && data.id == fileId && isValidId(fileId)
+          && (data.isPublic == null || data.isPublic is bool)
+          && data.createdAt == request.time;
+      }
+
+      allow get: if true;
+      allow list: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() && isValidFile(incoming());
+      allow update: if isOwner(existing().ownerId) 
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && (incoming().diff(existing()).affectedKeys().hasOnly(['name', 'isPublic', 'sharedWith', 'expiresAt', 'updatedAt']))
+        && (incoming().updatedAt == request.time);
+      allow delete: if isOwner(existing().ownerId);
+    }
+
+    // Transfer Rules
+    match /transfers/{transferId} {
+      allow create: if isSignedIn() && incoming().senderId == request.auth.uid;
+      allow read: if isSignedIn() && (resource.data.senderId == request.auth.uid || resource.data.receiverId == request.auth.uid);
+    }
+
+    // Check for admin (optional/mock for now)
+    function isAdmin() {
+      return false; // Implement actual admin check if needed
+    }
+  }
+}

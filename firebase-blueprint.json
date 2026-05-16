@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and storage usage",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "storageUsed": { "type": "number", "description": "Total bytes used" },
+        "storageLimit": { "type": "number", "description": "Max bytes allowed (default 5GB)" },
+        "isPremium": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "storageUsed", "storageLimit", "isPremium", "createdAt"]
+    },
+    "File": {
+      "title": "File",
+      "description": "Metadata for uploaded files",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "name": { "type": "string" },
+        "size": { "type": "number" },
+        "type": { "type": "string" },
+        "url": { "type": "string" },
+        "path": { "type": "string", "description": "Firebase Storage path" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "isPublic": { "type": "boolean" },
+        "sharedWith": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "ownerId", "name", "size", "type", "url", "path", "createdAt"]
+    },
+    "Transfer": {
+      "title": "Transfer",
+      "description": "Real-time transfer history",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "fileName": { "type": "string" },
+        "fileSize": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "senderId", "fileName", "fileSize", "status", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/files/{fileId}": {
+      "schema": "File",
+      "description": "Global file metadata"
+    },
+    "/transfers/{transferId}": {
+      "schema": "Transfer",
+      "description": "Transfer logs"
+    }
+  }
+}

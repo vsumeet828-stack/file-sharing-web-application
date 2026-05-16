@@ -1,0 +1,6 @@
+{
+  "name": "DropX",
+  "description": "Professional-grade real-time file sharing and cloud storage with glassmorphism design.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
