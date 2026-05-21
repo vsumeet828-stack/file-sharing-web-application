@@ -14,11 +14,29 @@ import {
 import { useAuthStore, useUIStore } from '../store/useStore';
 import { auth } from '../lib/firebase';
 import { cn } from '../lib/utils';
+import { getGravatarUrl } from '../lib/gravatar';
 
 export default function Navbar() {
   const { user } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
   const location = useLocation();
+  const [avatarUrl, setAvatarUrl] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!user) {
+      setAvatarUrl(null);
+      return;
+    }
+    const photo = user.photoURL;
+    const isValidPhoto = typeof photo === 'string' && photo.trim().toLowerCase().startsWith('http') && photo !== 'null' && photo !== 'undefined';
+    if (isValidPhoto) {
+      setAvatarUrl(photo);
+    } else if (user.email) {
+      setAvatarUrl(getGravatarUrl(user.email));
+    } else {
+      setAvatarUrl(null);
+    }
+  }, [user]);
 
   const navLinks = [
     { name: 'Features', path: '/#features' },
@@ -60,11 +78,24 @@ export default function Navbar() {
                 to="/dashboard"
                 className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-2xl text-sm font-bold hover:bg-black transition-all shadow-lg shadow-slate-900/10 active:scale-95"
               >
-                <div className="w-6 h-6 rounded-full border border-white/20 overflow-hidden bg-slate-800 shrink-0">
-                  {user.photoURL ? (
-                    <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
+                <div className="w-6 h-6 rounded-full border border-white/20 overflow-hidden bg-blue-500/10 flex items-center justify-center shrink-0">
+                  {avatarUrl ? (
+                    <img 
+                      src={avatarUrl} 
+                      onError={() => {
+                        if (avatarUrl === user.photoURL && user.email) {
+                          setAvatarUrl(getGravatarUrl(user.email));
+                        } else {
+                          setAvatarUrl(null);
+                        }
+                      }}
+                      className="w-full h-full object-cover" 
+                      alt="" 
+                    />
                   ) : (
-                    <UserIcon size={14} className="text-slate-400" />
+                    <span className="text-[9px] font-bold text-blue-600 uppercase">
+                      {(user.displayName || user.email || 'U').charAt(0).toUpperCase()}
+                    </span>
                   )}
                 </div>
                 <LayoutDashboard size={16} className="hidden sm:block" />

@@ -1,8 +1,9 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, GithubAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, GithubAuthProvider, signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
+import { toast } from 'sonner';
 
 // Support override via environment variables
 const config = {
@@ -59,7 +60,12 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  const friendlyMsg = errInfo.error.includes('permission-denied') 
+    ? 'Access denied by database rules.' 
+    : errInfo.error.includes('failed-precondition') 
+      ? 'Database query index is building. Please try again in a few seconds.' 
+      : errInfo.error;
+  toast.error(`Database operation failed: ${friendlyMsg}`);
 }
 
 export const signInWithGoogle = async () => {
@@ -99,6 +105,16 @@ export const signUpWithEmail = async (email: string, pass: string, name: string)
     return result.user;
   } catch (error) {
     console.error("Email Signup Error:", error);
+    throw error;
+  }
+};
+
+export const signInAsGuest = async () => {
+  try {
+    const result = await signInAnonymously(auth);
+    return result.user;
+  } catch (error) {
+    console.error("Anonymous Sign-In Error:", error);
     throw error;
   }
 };

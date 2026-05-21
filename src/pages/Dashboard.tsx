@@ -1,25 +1,24 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { 
-  Cloud, 
   Share2, 
   History, 
   Settings, 
-  Plus, 
-  Search,
-  Grid,
-  List as ListIcon,
-  HardDrive,
-  User,
-  Shield,
-  Wifi,
+  HardDrive, 
+  User, 
+  ShieldCheck, 
+  Wifi, 
   LayoutDashboard,
-  Menu
+  Menu,
+  Lock,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { useAuthStore, useUIStore } from '../store/useStore';
 import { formatBytes } from '../lib/utils';
 import { auth } from '../lib/firebase';
+import { getGravatarUrl } from '../lib/gravatar';
 
 // Dashboard Components
 import DashboardMain from './dashboard/DashboardMain';
@@ -31,38 +30,71 @@ export default function Dashboard() {
   const { user } = useAuthStore();
   const { isSidebarOpen, toggleSidebar } = useUIStore();
   const location = useLocation();
+  const [avatarUrl, setAvatarUrl] = React.useState<string | null>(null);
 
-  const isGuest = !user;
+  React.useEffect(() => {
+    const photo = user?.photoURL;
+    const isValidPhoto = typeof photo === 'string' && photo.trim().toLowerCase().startsWith('http') && photo !== 'null' && photo !== 'undefined';
+    if (isValidPhoto) {
+      setAvatarUrl(photo);
+    } else if (user?.email) {
+      setAvatarUrl(getGravatarUrl(user.email));
+    } else {
+      setAvatarUrl(null);
+    }
+  }, [user?.photoURL, user?.email]);
+
+  const isGuest = !user || user.email?.endsWith('@dropx.guest') || user.isAnonymous;
   const menuItems = isGuest 
-    ? [{ name: 'Local Share', path: '/dashboard/local', icon: <Wifi size={20} />, label: 'FREE' }]
+    ? [
+        { name: 'Workspace', path: '/dashboard', icon: <LayoutDashboard size={16} /> },
+        { name: 'Fast P2P Share', path: '/dashboard/local', icon: <Wifi size={16} />, label: 'FREE' }
+      ]
     : [
-        { name: 'Overview', path: '/dashboard', icon: <LayoutDashboard size={20} /> },
-        { name: 'Local Share', path: '/dashboard/local', icon: <Wifi size={20} />, label: 'NEW' },
-        { name: 'Shared with me', path: '/dashboard/shared', icon: <Share2 size={20} /> },
-        { name: 'History', path: '/dashboard/history', icon: <History size={20} /> },
-        { name: 'Settings', path: '/dashboard/settings', icon: <Settings size={20} /> },
+        { name: 'Workspace', path: '/dashboard', icon: <LayoutDashboard size={16} /> },
+        { name: 'Fast P2P Share', path: '/dashboard/local', icon: <Wifi size={16} />, label: 'NEW' },
+        { name: 'Secure Shared', path: '/dashboard/shared', icon: <Share2 size={16} /> },
+        { name: 'Transfer Audit', path: '/dashboard/history', icon: <History size={16} /> },
+        { name: 'Settings', path: '/dashboard/settings', icon: <Settings size={16} /> },
       ];
 
-  const storagePercentage = isGuest ? 0 : (user?.storageUsed / user?.storageLimit) * 100 || 0;
+  const storagePercentage = isGuest ? 12 : (user?.storageUsed / user?.storageLimit) * 100 || 0;
 
   return (
-    <div className="flex h-screen bg-background overflow-hidden relative">
-      {/* Background Blobs for Dashboard */}
-      <div className="absolute top-0 right-0 w-[40rem] h-[40rem] bg-primary/5 blur-[120px] rounded-full -z-0 pointer-events-none" />
+    <div className="flex h-screen bg-[#fafafa] text-slate-800 overflow-hidden relative font-sans">
       
       {/* Sidebar */}
-      <aside className={`fixed lg:relative z-40 h-full p-6 transition-all duration-500 ease-in-out ${isSidebarOpen ? 'w-80 translate-x-0' : 'w-24 -translate-x-full lg:translate-x-0'}`}>
-        <div className="h-full bg-white rounded-[2.5rem] border border-black/[0.03] shadow-[0_8px_30px_rgba(0,0,0,0.02)] flex flex-col p-6 overflow-hidden">
-          <div className="flex items-center gap-3 mb-10 px-2">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center p-2 shadow-lg shadow-primary/20 shrink-0">
-              <Cloud className="text-white w-full h-full" />
+      <aside className={`fixed lg:relative z-40 h-full p-4 transition-all duration-300 ease-in-out ${isSidebarOpen ? 'w-64 translate-x-0' : 'w-20 -translate-x-full lg:translate-x-0'}`}>
+        <div className="h-full bg-white border border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)] rounded-2xl flex flex-col p-4 overflow-hidden relative">
+          
+          {/* Header */}
+          <div className="flex items-center justify-between mb-6 px-2 mt-1">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center p-1.5 shadow-sm shrink-0">
+                <Lock className="text-white w-full h-full" size={14} />
+              </div>
+              {isSidebarOpen && (
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold tracking-tight text-slate-900 leading-none">DropX</span>
+                  <span className="text-[8px] text-blue-600 font-bold uppercase tracking-wider mt-0.5 flex items-center gap-1">
+                    <span className="w-1 h-1 rounded-full bg-blue-500 animate-pulse" />
+                    Zero-Knowledge
+                  </span>
+                </div>
+              )}
             </div>
-            {isSidebarOpen && (
-              <span className="text-xl font-extrabold tracking-tighter text-slate-900 truncate">DropX</span>
-            )}
+            
+            {/* Collapse Trigger */}
+            <button 
+              onClick={toggleSidebar}
+              className="hidden lg:flex w-5 h-5 rounded-full bg-slate-50 hover:bg-slate-100 border border-slate-200 items-center justify-center text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              {isSidebarOpen ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+            </button>
           </div>
 
-          <nav className="flex-grow space-y-2">
+          {/* Navigation Links */}
+          <nav className="flex-grow space-y-1">
             {menuItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
@@ -70,81 +102,123 @@ export default function Dashboard() {
                   key={item.name}
                   to={item.path}
                   title={!isSidebarOpen ? item.name : ''}
-                  className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl font-bold transition-all relative group ${
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-xs transition-all relative group ${
                     isActive 
-                      ? 'bg-primary text-white shadow-lg shadow-primary/20' 
-                      : 'text-slate-500 hover:bg-primary/5 hover:text-primary-dark'
+                      ? 'bg-slate-100 text-slate-900 border border-slate-200/20' 
+                      : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
                   }`}
                 >
-                  <div className={`${isActive ? '' : 'group-hover:scale-110'} transition-transform shrink-0`}>
+                  <div className={`shrink-0 ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'}`}>
                     {item.icon}
                   </div>
                   {isSidebarOpen && (
                     <span className="truncate flex-grow">{item.name}</span>
                   )}
                   {isSidebarOpen && item.label && (
-                    <span className="text-[9px] font-black bg-primary/10 text-primary px-1.5 py-0.5 rounded-lg">
+                    <span className="text-[8px] font-bold bg-blue-500/10 text-blue-600 px-1 py-0.5 rounded border border-blue-500/20">
                       {item.label}
                     </span>
                   )}
                   {!isSidebarOpen && isActive && (
-                    <div className="absolute right-0 w-1 h-6 bg-white rounded-l-full" />
+                    <div className="absolute right-0 w-1 h-4 bg-blue-600 rounded-l-full" />
                   )}
                 </Link>
               );
             })}
           </nav>
 
-          <div className="mt-auto space-y-6">
-            {isSidebarOpen && !isGuest && (
-              <div className="bg-gray-50/80 backdrop-blur-sm rounded-[2rem] p-5 border border-black/[0.02]">
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <div className="flex items-center gap-2">
-                    <HardDrive size={14} className="text-slate-400" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Storage</span>
-                  </div>
-                  <span className="text-[10px] font-black text-primary uppercase tracking-widest">{Math.round(storagePercentage)}%</span>
+          {/* Bottom Section */}
+          <div className="mt-auto space-y-3">
+            
+            {/* Security Indicator */}
+            {isSidebarOpen && (
+              <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-2xl flex items-start gap-2">
+                <ShieldCheck size={14} className="text-blue-600 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-[10px] font-bold text-slate-800 uppercase tracking-wider leading-none">E2EE Secured</p>
+                  <p className="text-[9px] text-slate-400 mt-1 font-medium leading-normal">AES-256 client encryption fully active.</p>
                 </div>
-                <div className="h-2 w-full bg-white rounded-full overflow-hidden border border-black/[0.03] p-[2px]">
+              </div>
+            )}
+
+            {/* Storage Progress */}
+            {isSidebarOpen && !isGuest && (
+              <div className="bg-slate-50 border border-slate-200/60 rounded-2xl p-3.5">
+                <div className="flex items-center justify-between mb-1.5 px-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <HardDrive size={10} className="text-slate-400" />
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Vault Space</span>
+                  </div>
+                  <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">{Math.round(storagePercentage)}%</span>
+                </div>
+                <div className="h-1.5 w-full bg-slate-200/50 rounded-full overflow-hidden p-[1px] border border-slate-300/30">
                   <motion.div 
                     initial={{ width: 0 }}
                     animate={{ width: `${storagePercentage}%` }}
-                    className="h-full bg-primary rounded-full shadow-[0_0_8px_rgba(110,168,254,0.3)]" 
+                    className="h-full bg-blue-600 rounded-full" 
                   />
                 </div>
-                <p className="text-[9px] text-slate-500 mt-3 font-bold px-1 uppercase tracking-tight truncate">
-                  {formatBytes(user?.storageUsed)} of {formatBytes(user?.storageLimit)} used
+                <p className="text-[9px] text-slate-400 mt-1.5 font-bold uppercase tracking-wide truncate">
+                  {formatBytes(user?.storageUsed)} / {formatBytes(user?.storageLimit)}
                 </p>
               </div>
             )}
             
+            {/* User Profile */}
             {isGuest ? (
-              <div className={`p-1.5 glass rounded-2xl ${isSidebarOpen ? 'px-4' : 'justify-center'}`}>
-                <Link to="/login" className="flex items-center gap-3 w-full">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200">
-                    <User size={20} className="text-slate-400" />
+              <div className={`flex items-center gap-2 p-1.5 bg-amber-50/50 border border-amber-200/40 rounded-xl ${isSidebarOpen ? 'px-3' : 'justify-center cursor-pointer'}`} onClick={!isSidebarOpen ? toggleSidebar : undefined}>
+                <div className="w-7 h-7 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0 border border-amber-500/20">
+                  <User size={14} className="text-amber-600" />
+                </div>
+                {isSidebarOpen && (
+                  <div className="overflow-hidden flex-grow leading-tight">
+                    <p className="text-xs font-bold truncate text-slate-800">Guest Session</p>
+                    <button 
+                      onClick={() => {
+                        auth.signOut();
+                        useAuthStore.getState().logout();
+                      }} 
+                      className="text-[9px] font-bold text-red-500 hover:underline uppercase tracking-wider"
+                    >
+                      Sign Out
+                    </button>
                   </div>
-                  {isSidebarOpen && (
-                    <div className="overflow-hidden flex-grow">
-                      <p className="text-sm font-bold truncate text-slate-900 leading-tight">Guest User</p>
-                      <p className="text-[10px] font-bold text-primary hover:underline">Log in for cloud</p>
-                    </div>
-                  )}
-                </Link>
+                )}
               </div>
             ) : (
-              <div className={`flex items-center gap-3 p-1.5 glass rounded-2xl ${isSidebarOpen ? 'px-4' : 'justify-center cursor-pointer'}`} onClick={!isSidebarOpen ? toggleSidebar : undefined}>
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 border border-primary/20">
-                  {user?.photoURL ? (
-                    <img src={user.photoURL} className="w-full h-full rounded-full" alt="" />
+              <div className={`flex items-center gap-2 p-1.5 bg-slate-50 border border-slate-200/40 rounded-xl ${isSidebarOpen ? 'px-3' : 'justify-center cursor-pointer'}`} onClick={!isSidebarOpen ? toggleSidebar : undefined}>
+                <div className="w-7 h-7 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20 overflow-hidden">
+                  {avatarUrl ? (
+                    <img 
+                      src={avatarUrl} 
+                      onError={() => {
+                        if (avatarUrl === user?.photoURL && user?.email) {
+                          setAvatarUrl(getGravatarUrl(user.email));
+                        } else {
+                          setAvatarUrl(null);
+                        }
+                      }} 
+                      className="w-full h-full rounded-full object-cover" 
+                      alt="" 
+                    />
                   ) : (
-                    <User size={20} className="text-primary" />
+                    <span className="text-[10px] font-bold text-blue-600 uppercase">
+                      {(user?.displayName || user?.email || 'U').charAt(0).toUpperCase()}
+                    </span>
                   )}
                 </div>
                 {isSidebarOpen && (
-                  <div className="overflow-hidden flex-grow">
-                    <p className="text-sm font-bold truncate text-slate-900">{user?.displayName || 'User'}</p>
-                    <button onClick={() => auth.signOut()} className="text-[10px] font-bold text-red-500 hover:underline">Sign Out</button>
+                  <div className="overflow-hidden flex-grow leading-tight">
+                    <p className="text-xs font-bold truncate text-slate-800">{user?.displayName || 'User'}</p>
+                    <button 
+                      onClick={() => {
+                        auth.signOut();
+                        useAuthStore.getState().logout();
+                      }} 
+                      className="text-[9px] font-bold text-red-500 hover:underline uppercase tracking-wider"
+                    >
+                      Sign Out
+                    </button>
                   </div>
                 )}
               </div>
@@ -153,24 +227,25 @@ export default function Dashboard() {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-grow overflow-y-auto relative z-10">
-        <header className="lg:hidden flex items-center justify-between p-6 bg-white border-b border-black/[0.03]">
+      {/* Main Content Pane */}
+      <main className="flex-grow overflow-y-auto relative z-10 flex flex-col">
+        {/* Mobile Header */}
+        <header className="lg:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200/80">
           <Link to="/" className="flex items-center gap-2">
-             <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center p-1.5">
-                <Cloud size={16} className="text-white" />
+             <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center p-1.5">
+                <Lock size={14} className="text-white" />
               </div>
-              <span className="text-lg font-extrabold tracking-tighter">DropX</span>
+              <span className="text-base font-bold tracking-tight text-slate-900">DropX</span>
           </Link>
           <button 
             onClick={toggleSidebar}
-            className="p-2 rounded-xl bg-gray-50 text-slate-600 border border-black/[0.03]"
+            className="p-1.5 rounded-lg bg-slate-50 text-slate-600 border border-slate-200"
           >
-            <Menu size={24} />
+            <Menu size={16} />
           </button>
         </header>
 
-        <div className="p-6 md:p-10 max-w-7xl mx-auto pt-10 lg:pt-16">
+        <div className="p-4 md:p-6 max-w-6xl w-full mx-auto flex-grow flex flex-col justify-start">
           <Routes>
             <Route path="/" element={<DashboardMain />} />
             <Route path="/local" element={<LocalShare />} />
@@ -180,7 +255,7 @@ export default function Dashboard() {
         </div>
       </main>
 
-      {/* Mobile Sidebar Overlay */}
+      {/* Mobile Drawer Overlay */}
       {isSidebarOpen && (
         <div 
           className="fixed inset-0 bg-slate-900/10 backdrop-blur-sm z-30 lg:hidden"

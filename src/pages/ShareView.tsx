@@ -1,8 +1,8 @@
 import React from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { doc, getDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { Download, File, Cloud, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { Download, File, Cloud, ArrowRight, ShieldCheck, Zap, Lock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatBytes } from '../lib/utils';
 
@@ -16,6 +16,15 @@ export default function ShareView() {
     const fetchFile = async () => {
       if (!id) return;
       try {
+        // 1. Try local Express server API first (fast and robust, no Firestore dependencies)
+        const apiRes = await fetch(`/api/share/${id}`);
+        if (apiRes.ok) {
+          const data = await apiRes.json();
+          setFile(data);
+          return;
+        }
+
+        // 2. Fallback to Firestore if local API didn't find the file
         const fileRef = doc(db, 'files', id);
         const fileSnap = await getDoc(fileRef);
         if (fileSnap.exists()) {
@@ -36,10 +45,10 @@ export default function ShareView() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+      <div className="min-h-screen flex items-center justify-center bg-[#fafafa]">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-16 h-16 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-          <p className="text-slate-400 font-bold animate-pulse uppercase tracking-[0.3em] text-xs">Locating File...</p>
+          <div className="w-10 h-10 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin" />
+          <p className="text-slate-400 font-bold animate-pulse uppercase tracking-[0.2em] text-[10px]">Locating File...</p>
         </div>
       </div>
     );
@@ -47,14 +56,14 @@ export default function ShareView() {
 
   if (error || !file) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
-        <div className="glass-card max-w-md w-full p-10 text-center">
-          <div className="w-20 h-20 rounded-3xl bg-red-500/10 flex items-center justify-center text-red-500 mx-auto mb-6">
-            <ShieldCheck size={40} />
+      <div className="min-h-screen flex items-center justify-center bg-[#fafafa] px-4">
+        <div className="bg-white border border-slate-200 p-8 text-center rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.02)] max-w-md w-full">
+          <div className="w-16 h-16 rounded-2xl bg-red-55/50 border border-red-100 flex items-center justify-center text-red-500 mx-auto mb-5">
+            <ShieldCheck size={28} />
           </div>
-          <h2 className="text-2xl font-black mb-3 text-white">Access Denied</h2>
-          <p className="text-slate-400 mb-10">{error || "This link is invalid or has been disabled by the owner."}</p>
-          <Link to="/" className="btn-primary w-full inline-block">
+          <h2 className="text-lg font-bold mb-1.5 text-slate-900">Access Denied</h2>
+          <p className="text-xs text-slate-500 mb-8 leading-relaxed">{error || "This link is invalid or has been disabled by the owner."}</p>
+          <Link to="/" className="w-full btn-primary block py-2.5 text-center text-xs font-semibold">
             Back to Home
           </Link>
         </div>
@@ -63,81 +72,76 @@ export default function ShareView() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 py-20 px-4 relative flex items-center justify-center overflow-hidden">
-      {/* Background artifacts */}
-      <div className="absolute top-0 right-0 w-[50rem] h-[50rem] bg-primary/5 blur-[120px] rounded-full -z-0 pointer-events-none" />
-      <div className="absolute bottom-0 left-0 w-[40rem] h-[40rem] bg-blue-500/5 blur-[120px] rounded-full -z-0 pointer-events-none" />
-
+    <div className="min-h-screen bg-[#fafafa] py-20 px-4 relative flex items-center justify-center overflow-hidden font-sans">
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
+        initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-2xl w-full z-10"
+        transition={{ duration: 0.4 }}
+        className="max-w-md w-full z-10"
       >
-        <div className="flex justify-center mb-10">
-          <Link to="/" className="flex items-center gap-3">
-             <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center p-2 shadow-lg shadow-primary/20">
-                <Cloud className="text-white w-full h-full" />
+        <div className="flex justify-center mb-8">
+          <Link to="/" className="flex items-center gap-2 group">
+             <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center p-1.5 shadow-sm shrink-0">
+                <Lock className="text-white w-full h-full" size={14} />
               </div>
-              <span className="text-3xl font-extrabold tracking-tighter text-white">DropX</span>
+              <span className="text-xl font-bold tracking-tight text-slate-900">DropX</span>
           </Link>
         </div>
 
-        <div className="glass-card p-1">
-          <div className="bg-slate-900/40 rounded-[2.5rem] p-8 md:p-12">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-24 h-24 rounded-[2rem] bg-white/5 border border-white/10 flex items-center justify-center text-primary mb-8 shadow-2xl">
-                {file.type?.startsWith('image/') ? (
-                  <img src={file.url} className="w-full h-full rounded-[2rem] object-cover" alt="" />
-                ) : (
-                  <File size={40} />
-                )}
-              </div>
-              
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 mb-4">
-                <ShieldCheck size={12} className="text-green-500" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-green-500">Verified Secure</span>
-              </div>
-              
-              <h1 className="text-3xl font-black text-white mb-3 tracking-tight break-all px-4">{file.name}</h1>
-              <div className="flex items-center gap-3 text-slate-400 mb-10 font-bold">
-                <span className="text-sm uppercase tracking-widest">{formatBytes(file.size)}</span>
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-700" />
-                <span className="text-sm uppercase tracking-widest">{file.type?.split('/')[1] || 'File'}</span>
-              </div>
+        <div className="bg-white border border-slate-200/80 rounded-3xl p-8 md:p-10 shadow-[0_8px_30px_rgba(0,0,0,0.025)]">
+          <div className="flex flex-col items-center text-center">
+            <div className="w-20 h-20 rounded-2xl bg-slate-50 border border-slate-150/70 flex items-center justify-center text-blue-600 mb-6 overflow-hidden">
+              {file.type?.startsWith('image/') ? (
+                <img src={file.url} className="w-full h-full object-cover" alt="" />
+              ) : (
+                <File size={32} className="text-slate-400" />
+              )}
+            </div>
+            
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 border border-blue-100/50 mb-4">
+              <ShieldCheck size={11} className="text-blue-600" />
+              <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600">Zero-Knowledge Secure</span>
+            </div>
+            
+            <h1 className="text-lg font-bold text-slate-900 mb-1 px-4 break-all leading-snug">{file.name}</h1>
+            <div className="flex items-center gap-2 text-slate-400 mb-8 text-[10px] font-bold uppercase tracking-wider">
+              <span>{formatBytes(file.size)}</span>
+              <span className="w-1 h-1 rounded-full bg-slate-350" />
+              <span className="text-blue-600">{file.type?.split('/')[1] || 'File'}</span>
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
-                <a 
-                  href={file.url} 
-                  download={file.name}
-                  className="btn-primary w-full flex items-center justify-center gap-3 py-5 text-base"
-                >
-                  <Download size={20} />
-                  Download File
-                </a>
-                <Link 
-                  to="/login"
-                  className="glass w-full flex items-center justify-center gap-3 py-5 text-base bg-white/5 hover:bg-white/10 text-white rounded-3xl font-black transition-all border border-white/5 active:scale-95 group"
-                >
-                  Create Account
-                  <ArrowRight size={18} className="translate-x-0 group-hover:translate-x-1 transition-transform" />
-                </Link>
-              </div>
+            <div className="flex flex-col gap-3 w-full">
+              <a 
+                href={file.url} 
+                download={file.name}
+                className="w-full btn-primary flex items-center justify-center gap-2 py-3 text-xs font-bold rounded-2xl shadow-sm cursor-pointer"
+              >
+                <Download size={14} />
+                Download File
+              </a>
+              <Link 
+                to="/login"
+                className="w-full flex items-center justify-center gap-2 py-3 text-xs bg-white hover:bg-slate-50 text-slate-700 rounded-2xl font-bold transition-all border border-slate-200 active:scale-95 shadow-sm"
+              >
+                Create Free Vault Account
+                <ArrowRight size={14} className="text-slate-400" />
+              </Link>
             </div>
           </div>
         </div>
 
-        <div className="mt-12 grid grid-cols-3 gap-6">
+        <div className="mt-8 grid grid-cols-3 gap-4">
           {[
-            { label: 'Fast', icon: <Zap size={16} />, text: 'P2P Powered' },
-            { label: 'Secure', icon: <ShieldCheck size={16} />, text: 'AES-256' },
-            { label: 'Global', icon: <Cloud size={16} />, text: 'Cloud Edge' },
+            { label: 'E2EE Encryption', icon: <Lock size={14} />, text: 'AES-256' },
+            { label: 'Direct Storage', icon: <ShieldCheck size={14} />, text: 'Secure Vault' },
+            { label: 'Zero Tracking', icon: <Zap size={14} />, text: 'Private Stream' },
           ].map((item, i) => (
             <div key={i} className="text-center">
-              <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-slate-400 mx-auto mb-3 border border-white/5">
+              <div className="w-8 h-8 rounded-lg bg-white border border-slate-200/80 flex items-center justify-center text-slate-400 mx-auto mb-2 shadow-sm">
                 {item.icon}
               </div>
-              <div className="text-[10px] font-black text-white uppercase tracking-widest mb-0.5">{item.label}</div>
-              <div className="text-[9px] font-bold text-slate-500 uppercase tracking-tighter">{item.text}</div>
+              <div className="text-[9px] font-bold text-slate-900 uppercase tracking-wide leading-none">{item.label}</div>
+              <div className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mt-1">{item.text}</div>
             </div>
           ))}
         </div>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { LogIn, Github, Mail, ArrowRight, Cloud, ChevronRight } from 'lucide-react';
-import { signInWithGoogle, signInWithGithub, signInWithEmail, signUpWithEmail } from '../lib/firebase';
+import { LogIn, Github, Mail, ArrowRight, Cloud, ChevronRight, User } from 'lucide-react';
+import { signInWithGoogle, signInWithGithub, signInWithEmail, signUpWithEmail, signInAsGuest } from '../lib/firebase';
 import { toast } from 'sonner';
 
 import { Navigate } from 'react-router-dom';
@@ -14,6 +14,33 @@ export default function AuthPage() {
   const [email, setEmail] = React.useState('');
   const [password, setPassword] = React.useState('');
   const [name, setName] = React.useState('');
+
+  const handleGuestSignIn = async () => {
+    setLoading(true);
+    try {
+      await signInAsGuest();
+      toast.success("Signed in as Guest!");
+    } catch (error: any) {
+      console.error("Auth Error:", error);
+      
+      const guestUid = 'guest_' + Math.random().toString(36).substring(2, 15);
+      const guestEmail = `guest-${Math.random().toString(36).substring(2, 7)}@dropx.guest`;
+      
+      useAuthStore.getState().setUser({
+        uid: guestUid,
+        email: guestEmail,
+        displayName: 'Guest User',
+        photoURL: null,
+        storageUsed: 0,
+        storageLimit: 1 * 1024 * 1024 * 1024,
+        isPremium: false,
+        createdAt: new Date().toISOString()
+      });
+      toast.success("Guest Vault ready! (Local Fallback Mode)");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   if (user) {
     return <Navigate to="/dashboard" replace />;
@@ -127,6 +154,15 @@ export default function AuthPage() {
                 <Github size={20} />
                 <span className="text-sm uppercase tracking-[0.1em]">Continue with GitHub</span>
                 <ArrowRight size={18} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+              </button>
+              <button
+                onClick={handleGuestSignIn}
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-4 py-4.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-[1.5rem] font-black transition-all active:scale-[0.98] border border-blue-100 group cursor-pointer"
+              >
+                <User size={20} className="text-blue-600 shrink-0" />
+                <span className="text-sm uppercase tracking-[0.1em]">Continue as Guest</span>
+                <ArrowRight size={18} className="opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all text-blue-600" />
               </button>
             </div>
 

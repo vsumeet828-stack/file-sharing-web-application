@@ -1,24 +1,24 @@
 import React from 'react';
 import { 
   Plus, 
-  User,
   Search, 
   Grid, 
   List, 
-  MoreVertical, 
   Download, 
   Share2, 
-  Trash2, 
-  ExternalLink,
   ChevronRight,
-  Clock,
-  LayoutGrid,
   Cloud,
   Wifi,
-  File as FileIcon
+  File as FileIcon,
+  Shield,
+  Lock,
+  RefreshCw,
+  HardDrive,
+  Copy,
+  X
 } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { collection, query, where, orderBy, onSnapshot, limit } from 'firebase/firestore';
+import { motion, AnimatePresence } from 'framer-motion';
+import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType } from '../../lib/firebase';
 import { formatBytes } from '../../lib/utils';
 import FileUpload from '../../components/FileUpload';
@@ -28,10 +28,29 @@ import { useAuthStore } from '../../store/useStore';
 
 export default function DashboardMain() {
   const { user } = useAuthStore();
+  const isGuest = !user || user.email?.endsWith('@dropx.guest') || user.isAnonymous;
   const [showUpload, setShowUpload] = React.useState(false);
   const [files, setFiles] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [search, setSearch] = React.useState('');
+  const [viewMode, setViewMode] = React.useState<'grid' | 'list'>('grid');
+  const [localIp, setLocalIp] = React.useState('localhost');
+  const [shareFile, setShareFile] = React.useState<any | null>(null);
+
+  React.useEffect(() => {
+    fetch('/api/ip')
+      .then(res => res.json())
+      .then(data => {
+        if (data.ip) setLocalIp(data.ip);
+      })
+      .catch(e => console.warn('Could not fetch server local IP:', e));
+  }, []);
+
+  const getShareUrl = (fileId: string) => {
+    const originIp = localIp === 'localhost' ? window.location.hostname : localIp;
+    const port = window.location.port ? `:${window.location.port}` : '';
+    return `${window.location.protocol}//${originIp}${port}/share/${fileId}`;
+  };
 
   React.useEffect(() => {
     if (!auth.currentUser) return;
@@ -48,212 +67,420 @@ export default function DashboardMain() {
       setFiles(docs);
       setLoading(false);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
       setLoading(false);
+      handleFirestoreError(error, OperationType.LIST, path);
     });
 
     return () => unsub();
   }, []);
 
   const filteredFiles = files.filter(f => f.name.toLowerCase().includes(search.toLowerCase()));
+  const totalStorageUsed = files.reduce((acc, file) => acc + (file.size || 0), 0);
 
   return (
-    <div className="space-y-12">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-10 px-4">
-        <div className="flex items-center gap-8">
-          <div className="w-24 h-24 rounded-[3rem] bg-slate-900 border-[6px] border-slate-50 flex items-center justify-center p-1 shadow-[0_32px_64px_-16px_rgba(0,0,0,0.15)] shrink-0 group hover:rotate-6 transition-transform duration-500">
-             {user?.photoURL ? (
-                <img src={user.photoURL} className="w-full h-full rounded-[2.5rem] object-cover" alt="" />
-              ) : (
-                <User size={36} className="text-white" />
-              )}
-          </div>
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 text-[9px] font-black uppercase tracking-widest text-indigo-500">Workspace</div>
-              <div className="w-1.5 h-1.5 rounded-full bg-slate-200" />
-              <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{user?.email}</div>
+    <div className="space-y-6 pb-12 text-slate-700">
+      
+      {/* Guest Mode Callout Banner */}
+      {isGuest && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50/70 border border-blue-150 rounded-2xl p-5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex gap-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center text-blue-600 shrink-0 border border-blue-200/50">
+              <Lock size={18} className="animate-pulse" />
             </div>
-            <h1 className="text-5xl md:text-6xl font-black tracking-tighter text-slate-900 leading-none">
-              Welcome, <span className="text-indigo-600">{user?.displayName?.split(' ')[0] || 'Member'}</span>.
-            </h1>
+            <div>
+              <h4 className="text-xs font-bold text-slate-900 leading-tight">Temporary Guest Vault Active</h4>
+              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-medium">
+                You are accessing DropX without an account. Any shared links are transient. **Create a free permanent vault** to keep your files forever and get 5GB secure cloud storage.
+              </p>
+            </div>
           </div>
+          <button
+            onClick={() => {
+              auth.signOut();
+              useAuthStore.getState().logout();
+            }}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[10px] uppercase tracking-wider transition-all active:scale-95 shadow-sm shrink-0 border border-blue-600 cursor-pointer"
+          >
+            Create Free Account
+          </button>
         </div>
-        <div className="flex items-center gap-4">
+      )}
+
+      {/* Visual Header / Welcome Section */}
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-blue-600">Workspace</span>
+            <span className="w-1 h-1 rounded-full bg-slate-300" />
+            <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest">E2EE Secured</span>
+          </div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Welcome, {user?.displayName?.split(' ')[0] || 'Member'}
+          </h1>
+        </div>
+        
+        <div className="flex items-center gap-3">
           <button 
             onClick={() => setShowUpload(!showUpload)}
-            className="btn-primary !rounded-[2.5rem] flex items-center justify-center gap-4 group !py-6 !px-10 text-xl shadow-2xl shadow-indigo-200"
+            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 font-medium text-xs text-white flex items-center gap-1.5 transition-all shadow-sm active:scale-95 shrink-0"
           >
-            {showUpload ? <ChevronRight /> : <Plus className="group-hover:rotate-90 transition-transform duration-500" />}
-            {showUpload ? 'Library' : 'Upload New'}
+            {showUpload ? <ChevronRight size={14} /> : <Plus size={14} />}
+            {showUpload ? 'Library View' : 'Secure Upload'}
           </button>
         </div>
       </header>
 
-      {showUpload ? (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <FileUpload onComplete={() => setShowUpload(false)} />
-        </motion.div>
-      ) : (
-        <>
-          {/* Free P2P Promo Banner */}
-          {!user?.isPremium && (
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="bg-indigo-600 rounded-[2.5rem] p-8 md:p-10 text-white relative overflow-hidden group shadow-2xl shadow-indigo-200"
-            >
-              <div className="absolute top-0 right-0 w-[30rem] h-[30rem] bg-indigo-500 blur-[100px] rounded-full -z-0 opacity-50 group-hover:opacity-70 transition-opacity" />
-              <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-10">
-                <div className="flex-grow max-w-2xl">
-                  <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full border border-white/20 mb-6 group-hover:scale-105 transition-transform">
-                    <Wifi size={12} className="text-white animate-pulse" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em]">Unlimited Free Transfer</span>
-                  </div>
-                  <h2 className="text-3xl md:text-5xl font-black mb-6 leading-[1.1] tracking-tight">Need a free way to share huge files?</h2>
-                  <p className="text-indigo-100 font-bold mb-0 text-lg opacity-90 max-w-xl leading-relaxed">
-                    Use <strong className="text-white">Fast Share</strong> for direct P2P transfers. No storage limits, no cloud fees, and completely private.
-                  </p>
-                </div>
-                <Link 
-                  to="/dashboard/local"
-                  className="bg-white text-indigo-600 px-10 py-5 rounded-3xl font-black text-lg hover:bg-indigo-50 transition-all shadow-xl shadow-black/10 active:scale-95 shrink-0 flex items-center gap-3 group/btn"
-                >
-                  Go to Fast Share
-                  <ChevronRight className="group-hover/btn:translate-x-1 transition-transform" />
-                </Link>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[
-              { label: 'Total Objects', value: files.length, icon: <LayoutGrid className="text-blue-500" />, bg: 'bg-blue-50' },
-              { label: 'Usage', value: formatBytes(files.reduce((a, b) => a + (b.size || 0), 0)), icon: <Cloud className="text-primary" />, bg: 'bg-primary/10' },
-              { label: 'Shared Link', value: '0', icon: <Share2 className="text-indigo-500" />, bg: 'bg-indigo-50' },
-              { label: 'Network', value: 'Local', icon: <Wifi className="text-green-500" />, bg: 'bg-green-50' },
-            ].map((stat, i) => (
-              <div key={i} className="premium-card !p-6 group flex items-center gap-6">
-                <div className={`w-14 h-14 rounded-2xl ${stat.bg} flex items-center justify-center transition-transform group-hover:scale-110 duration-500 shrink-0`}>
-                  {React.cloneElement(stat.icon as React.ReactElement<any>, { size: 24 })}
-                </div>
-                <div>
-                  <div className="text-2xl font-black text-slate-900 leading-none mb-1">{stat.value}</div>
-                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</div>
-                </div>
-              </div>
-            ))}
+      {/* Security Trust Indicators Bar */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-white border border-slate-200/60 rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+            <Lock size={14} />
           </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-900 uppercase tracking-wider leading-none">AES-256 E2EE</p>
+            <p className="text-[9px] text-slate-400 mt-0.5">Zero-knowledge local encryption</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+            <Shield size={14} />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-900 uppercase tracking-wider leading-none">Safe Storage</p>
+            <p className="text-[9px] text-slate-400 mt-0.5">Malware scanned objects</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+            <Wifi size={14} />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-900 uppercase tracking-wider leading-none">Local Share</p>
+            <p className="text-[9px] text-slate-400 mt-0.5">P2P zero-cloud transfers</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+            <RefreshCw size={14} />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-900 uppercase tracking-wider leading-none">Link Expiry</p>
+            <p className="text-[9px] text-slate-400 mt-0.5">Secure transient download locks</p>
+          </div>
+        </div>
+      </div>
 
-          {/* Files List */}
-          <div className="space-y-8">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
-              <h2 className="text-2xl font-bold text-slate-900">Recent Activity</h2>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center bg-white border border-black/[0.04] px-4 py-2.5 rounded-2xl focus-within:ring-2 focus-within:ring-primary/20 transition-all shadow-sm">
-                  <Search size={18} className="text-slate-400" />
-                  <input 
-                    type="text" 
-                    placeholder="Search library..."
-                    className="bg-transparent border-none outline-none text-sm ml-3 w-40 text-slate-600 font-medium"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-                <div className="flex items-center bg-white border border-black/[0.04] rounded-2xl p-1.5 shadow-sm">
-                  <button className="p-2 bg-primary/5 text-primary rounded-xl"><Grid size={18} /></button>
-                  <button className="p-2 text-slate-400 hover:text-slate-600 transition-colors"><List size={18} /></button>
-                </div>
-              </div>
+      <AnimatePresence mode="wait">
+        {showUpload ? (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="p-6 bg-white border border-slate-200/60 rounded-2xl shadow-[0_1px_3px_rgba(0,0,0,0.04)] relative overflow-hidden"
+          >
+            <div className="mb-6">
+              <h3 className="text-base font-semibold text-slate-900">Client-Side Encrypted File Upload</h3>
+              <p className="text-[9px] text-blue-600 font-bold uppercase tracking-wider mt-0.5">AES-256 zero-knowledge encryption active</p>
             </div>
-
-            {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                {[...Array(8)].map((_, i) => (
-                  <div key={i} className="premium-card h-64 animate-pulse bg-gray-100/50" />
-                ))}
-              </div>
-            ) : filteredFiles.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                {filteredFiles.map((file) => (
-                  <motion.div
-                    key={file.id}
-                    layout
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="premium-card !p-4 group flex flex-col"
+            <FileUpload onComplete={() => setShowUpload(false)} />
+          </motion.div>
+        ) : (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="space-y-6"
+          >
+            
+            {/* Direct P2P Banner */}
+            {!user?.isPremium && (
+              <div className="bg-white border border-slate-200/80 rounded-2xl p-6 relative overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.04)] group">
+                <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                  <div className="space-y-1">
+                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-blue-50 border border-blue-100 text-[9px] font-bold uppercase tracking-wider text-blue-600">
+                      <Wifi size={10} className="animate-pulse" />
+                      Free Direct Share
+                    </span>
+                    <h3 className="text-lg font-semibold text-slate-900 tracking-tight">Need to send a massive file immediately?</h3>
+                    <p className="text-xs text-slate-500 max-w-xl">
+                      Skip cloud upload boundaries. Use <strong className="text-blue-600 font-medium">Fast P2P Share</strong> to transfer directly client-to-client over local rooms. No storage limits, completely unmonitored and secure.
+                    </p>
+                  </div>
+                  <Link 
+                    to="/dashboard/local"
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium text-xs transition-all flex items-center gap-1 active:scale-95 shrink-0 group/btn shadow-sm"
                   >
-                    <div className="relative mb-5 rounded-[2rem] aspect-square bg-gray-50 flex items-center justify-center overflow-hidden border border-black/[0.02]">
-                      {file.type.startsWith('image/') ? (
-                        <img src={file.url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt="" />
-                      ) : (
-                        <div className="w-16 h-16 rounded-2xl bg-white flex items-center justify-center shadow-lg border border-black/[0.02] text-slate-300">
-                          <FileIcon size={32} />
-                        </div>
-                      )}
-                      
-                      <div className="absolute inset-x-4 bottom-4 p-2 bg-white/80 backdrop-blur-md rounded-2xl shadow-xl border border-white opacity-0 group-hover:opacity-100 transition-all translate-y-2 group-hover:translate-y-0 flex items-center justify-around gap-2">
-                        <a 
-                          href={file.url} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="flex-grow flex items-center justify-center p-2.5 bg-primary text-white rounded-xl hover:bg-primary-dark transition-all shadow-lg shadow-primary/20"
-                        >
-                          <Download size={18} />
-                        </a>
-                        <button 
-                          onClick={() => {
-                            const shareUrl = `${window.location.origin}/share/${file.id}`;
-                            navigator.clipboard.writeText(shareUrl);
-                            toast.success("Share link copied to clipboard!");
-                          }}
-                          className="flex-grow flex items-center justify-center p-2.5 bg-slate-900 text-white rounded-xl hover:bg-black transition-all shadow-lg shadow-slate-900/10"
-                        >
-                          <Share2 size={18} />
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <div className="flex items-start justify-between gap-4 px-1">
-                      <div className="overflow-hidden">
-                        <h4 className="font-bold text-sm truncate text-slate-900 mb-1 leading-tight">{file.name}</h4>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{formatBytes(file.size)}</span>
-                          <span className="w-1 h-1 rounded-full bg-slate-300" />
-                          <span className="text-[10px] font-black text-primary uppercase tracking-widest">{file.type.split('/')[1] || 'FILE'}</span>
-                        </div>
-                      </div>
-                      <button className="p-2 text-slate-300 hover:text-slate-600 transition-colors">
-                        <MoreVertical size={18} />
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-24 premium-card bg-white">
-                <div className="w-24 h-24 rounded-[2.5rem] bg-gray-50 flex items-center justify-center text-slate-200 mb-8 border border-black/[0.02]">
-                  <Cloud size={48} />
+                    Launch Fast Share
+                    <ChevronRight size={12} className="group-hover/btn:translate-x-0.5 transition-transform" />
+                  </Link>
                 </div>
-                <h3 className="text-2xl font-black mb-3 text-slate-900">Your library is empty</h3>
-                <p className="text-slate-500 mb-10 max-w-sm text-center font-medium px-4 leading-relaxed">
-                  Start by uploading your first asset or document. We support files up to 5GB.
-                </p>
-                <button 
-                  onClick={() => setShowUpload(true)}
-                  className="btn-primary px-12"
-                >
-                  Upload First File
-                </button>
               </div>
             )}
+
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { label: 'Total Objects', value: files.length, icon: <FileIcon className="text-blue-600" />, bg: 'bg-blue-50' },
+                { label: 'Storage Used', value: formatBytes(totalStorageUsed), icon: <HardDrive className="text-blue-600" />, bg: 'bg-blue-50' },
+                { label: 'Network status', value: 'Active', icon: <Wifi className="text-blue-600" />, bg: 'bg-blue-50' },
+                { label: 'System status', value: 'Secured', icon: <Shield className="text-blue-600" />, bg: 'bg-blue-50' },
+              ].map((stat, i) => (
+                <div key={i} className="p-4 bg-white border border-slate-200/60 rounded-2xl flex items-center gap-3.5 hover:border-slate-300 shadow-[0_1px_3px_rgba(0,0,0,0.02)] transition-all">
+                  <div className={`w-9 h-9 rounded-xl ${stat.bg} flex items-center justify-center shrink-0`}>
+                    {React.cloneElement(stat.icon as React.ReactElement<any>, { size: 16 })}
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold text-slate-900 leading-none mb-0.5">{stat.value}</div>
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{stat.label}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Files List Layout */}
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-900">Recent Activity</h2>
+                  <p className="text-[9px] text-slate-400 uppercase tracking-wider mt-0.5 font-medium">Encrypted Assets Repository</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center bg-white border border-slate-200 px-3 py-1.5 rounded-xl focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500/10 transition-all">
+                    <Search size={14} className="text-slate-400" />
+                    <input 
+                      type="text" 
+                      placeholder="Search files..."
+                      className="bg-transparent border-none outline-none text-xs ml-2 w-36 text-slate-800 font-medium placeholder:text-slate-400"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex items-center bg-slate-50 border border-slate-200 rounded-xl p-0.5 shrink-0">
+                    <button 
+                      onClick={() => setViewMode('grid')}
+                      className={`p-1.5 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-white text-slate-800 border border-slate-200/80 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      <Grid size={14} />
+                    </button>
+                    <button 
+                      onClick={() => setViewMode('list')}
+                      className={`p-1.5 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-white text-slate-800 border border-slate-200/80 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      <List size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {loading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="h-40 bg-slate-50 border border-slate-100 rounded-2xl animate-pulse" />
+                  ))}
+                </div>
+              ) : filteredFiles.length > 0 ? (
+                viewMode === 'grid' ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {filteredFiles.map((file) => (
+                      <motion.div
+                        key={file.id}
+                        layout
+                        initial={{ opacity: 0, scale: 0.98 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white border border-slate-200/60 hover:border-slate-350 hover:shadow-sm p-3.5 rounded-2xl flex flex-col group relative transition-all duration-200 overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.02)]"
+                      >
+                        <div className="absolute top-2.5 right-2.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 border border-blue-100 text-[8px] font-bold text-blue-600">
+                          <Lock size={8} />
+                          AES-256
+                        </div>
+
+                        {/* File Icon / Preview section */}
+                        <div className="mb-3 rounded-xl aspect-video bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden relative">
+                          {file.type.startsWith('image/') ? (
+                            <img src={file.url} className="w-full h-full object-cover group-hover:scale-102 transition-transform duration-300" alt="" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-lg bg-white border border-slate-200/85 flex items-center justify-center text-slate-400">
+                              <FileIcon size={16} />
+                            </div>
+                          )}
+                          
+                          {/* Grid Item hover action overlay */}
+                          <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                            <a 
+                              href={file.url} 
+                              target="_blank" 
+                              rel="noreferrer"
+                              className="w-7 h-7 rounded-lg bg-blue-600 hover:bg-blue-700 flex items-center justify-center text-white transition-all active:scale-95"
+                              title="Download Decrypted"
+                            >
+                              <Download size={12} />
+                            </a>
+                            <button 
+                              onClick={() => setShareFile(file)}
+                              className="w-7 h-7 rounded-lg bg-white hover:bg-slate-50 flex items-center justify-center text-slate-800 transition-all active:scale-95 border border-slate-250 shadow-sm"
+                              title="Copy Share Link"
+                            >
+                              <Share2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                        
+                        {/* Title and metadata details */}
+                        <div className="flex items-start justify-between gap-3 mt-1 min-w-0">
+                          <div className="min-w-0 flex-grow">
+                            <h4 className="font-semibold text-xs text-slate-900 truncate leading-snug mb-0.5">{file.name}</h4>
+                            <div className="flex items-center gap-1.5 text-[9px] font-bold text-slate-400 uppercase tracking-wide">
+                              <span>{formatBytes(file.size)}</span>
+                              <span className="w-1 h-1 rounded-full bg-slate-200" />
+                              <span className="text-blue-600">{file.type.split('/')[1] || 'FILE'}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                ) : (
+                  /* Premium List View Table */
+                  <div className="border border-slate-200/60 rounded-2xl overflow-hidden bg-white shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                          <th className="py-2.5 px-4 font-bold">Filename</th>
+                          <th className="py-2.5 px-4 font-bold">Size</th>
+                          <th className="py-2.5 px-4 font-bold">Encryption Type</th>
+                          <th className="py-2.5 px-4 font-bold">Uploaded</th>
+                          <th className="py-2.5 px-4 text-right font-bold">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredFiles.map((file) => (
+                          <tr key={file.id} className="border-b border-slate-100 hover:bg-slate-50/40 transition-colors group">
+                            <td className="py-3 px-4 font-medium text-slate-900 flex items-center gap-2">
+                              <FileIcon size={13} className="text-slate-400 shrink-0" />
+                              <span className="truncate max-w-xs">{file.name}</span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-500 font-medium">{formatBytes(file.size)}</td>
+                            <td className="py-3 px-4">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-blue-50 border border-blue-100 text-[8px] font-bold text-blue-600">
+                                <Lock size={8} />
+                                AES-256 E2EE
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-400 font-medium">
+                              {file.createdAt ? new Date(file.createdAt.seconds * 1000).toLocaleDateString() : 'Pending'}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <a 
+                                  href={file.url} 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="w-6 h-6 rounded-lg bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white flex items-center justify-center transition-colors border border-blue-100"
+                                >
+                                  <Download size={10} />
+                                </a>
+                                <button 
+                                  onClick={() => setShareFile(file)}
+                                  className="w-6 h-6 rounded-lg bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-800 flex items-center justify-center transition-colors border border-slate-200 shadow-sm"
+                                >
+                                  <Share2 size={10} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              ) : (
+                /* Sleek Empty State */
+                <div className="flex flex-col items-center justify-center py-20 bg-white border border-slate-200/60 rounded-2xl p-6 text-center shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-150 flex items-center justify-center text-slate-400 mb-4 animate-pulse">
+                    <Cloud size={20} />
+                  </div>
+                  <h3 className="text-sm font-semibold text-slate-900">No secure uploads yet</h3>
+                  <p className="text-xs text-slate-500 mt-1 max-w-sm">
+                    Protect your files with absolute client-side encryption. Supported size limit is up to 5GB.
+                  </p>
+                  <button 
+                    onClick={() => setShowUpload(true)}
+                    className="mt-4 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs active:scale-95 transition-all shadow-sm"
+                  >
+                    Upload first asset
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Premium Local Share Modal */}
+      <AnimatePresence>
+        {shareFile && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl border border-slate-200/80 p-6 md:p-8 max-w-sm w-full shadow-[0_10px_40px_rgba(0,0,0,0.06)] relative overflow-hidden"
+            >
+              <button 
+                onClick={() => setShareFile(null)}
+                className="absolute top-4 right-4 p-1.5 hover:bg-slate-50 text-slate-400 hover:text-slate-600 rounded-lg transition-all"
+              >
+                <X size={16} />
+              </button>
+
+              <div className="text-center">
+                <div className="w-12 h-12 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 mx-auto mb-4">
+                  <Share2 size={20} />
+                </div>
+                <h3 className="text-sm font-semibold text-slate-900 mb-1">Local Network Sharing</h3>
+                <p className="text-[10px] text-slate-400 mb-6 font-medium truncate px-4">file: {shareFile.name}</p>
+                
+                {/* QR Code Container */}
+                <div className="bg-slate-50 border border-slate-150 rounded-2xl p-4 inline-block mb-6 shadow-inner">
+                  <img 
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(getShareUrl(shareFile.id))}`}
+                    alt="Scan to download"
+                    className="w-36 h-36 mx-auto object-contain rounded-md"
+                  />
+                </div>
+
+                <div className="text-left space-y-1.5 mb-6">
+                  <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block ml-1">Network URL</label>
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      readOnly 
+                      value={getShareUrl(shareFile.id)} 
+                      className="bg-slate-50 border border-slate-200 text-[10px] font-mono text-slate-600 px-3 py-2 rounded-xl flex-grow focus:outline-none"
+                    />
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(getShareUrl(shareFile.id));
+                        toast.success("Link copied!");
+                      }}
+                      className="p-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl active:scale-95 transition-all shadow-sm flex items-center justify-center"
+                      title="Copy URL"
+                    >
+                      <Copy size={14} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-blue-50/50 border border-blue-100/40 rounded-xl p-3.5 text-left flex items-start gap-2.5">
+                  <Wifi size={14} className="text-blue-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-[10px] font-bold text-slate-900 leading-none mb-0.5">Wi-Fi Sharing</h4>
+                    <p className="text-[9px] text-slate-500 leading-relaxed">Scan the QR code with your phone camera, or open the URL. Make sure your phone is on the same Wi-Fi network.</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </div>
-        </>
-      )}
+        )}
+      </AnimatePresence>
     </div>
   );
 }

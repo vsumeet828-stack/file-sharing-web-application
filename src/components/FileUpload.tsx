@@ -1,9 +1,8 @@
 import React from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, X, File as FileIcon, CheckCircle2, Loader2 } from 'lucide-react';
+import { Upload, X, File as FileIcon, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { db, storage, auth, handleFirestoreError, OperationType } from '../lib/firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { db, auth, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp, doc, updateDoc, increment, setDoc } from 'firebase/firestore';
 import { toast } from 'sonner';
 import { formatBytes } from '../lib/utils';
@@ -30,6 +29,20 @@ export default function FileUpload({ onComplete }: FileUploadProps) {
     onDrop
   } as any);
 
+  // Helper: read a File as base64 string
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(',')[1]; // strip data:...;base64, prefix
+        resolve(base64);
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  };
+
   const startUpload = async () => {
     if (files.length === 0) return;
     setUploading(true);
@@ -38,80 +51,92 @@ export default function FileUpload({ onComplete }: FileUploadProps) {
       if (fileData.status === 'completed') return;
 
       const { file, id } = fileData;
-      const fileRef = ref(storage, `files/${auth.currentUser?.uid}/${id}-${file.name}`);
-      const uploadTask = uploadBytesResumable(fileRef, file);
 
-      return new Promise((resolve, reject) => {
-        uploadTask.on('state_changed', 
-          (snapshot) => {
-            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-            setFiles(prev => prev.map((f, i) => i === index ? { ...f, progress } : f));
-          }, 
-          (error: any) => {
-            console.error("Storage Error:", error);
-            let message = `Upload failed for ${file.name}`;
-            
-            if (error.code === 'storage/unauthorized') {
-              message = "Permission denied. Check your rules.";
-            } else if (error.code === 'storage/quota-exceeded') {
-              message = "Quota exceeded. Try Fast Share!";
-            } else if (error.message.includes('pricing plan') || error.code === 'storage/canceled') {
-              message = "Cloud Storage requires upgrade. Use Fast Share for free transfers!";
-            }
-            
-            toast.error(message, {
-              duration: 10000,
-              action: {
-                label: 'Use Fast Share',
-                onClick: () => window.location.href = '/dashboard/local'
-              }
-            });
-            reject(error);
-          }, 
-          async () => {
-            const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-            
-            try {
-              // Save metadata to Firestore
-              const metadataPath = 'files';
-              await setDoc(doc(db, metadataPath, id), {
-                id: id,
-                ownerId: auth.currentUser?.uid,
-                name: file.name,
-                size: file.size,
-                type: file.type,
-                url: downloadURL,
-                path: fileRef.fullPath,
-                isPublic: false,
-                createdAt: serverTimestamp(),
-              });
+      try {
+        // Step 1: Read file as base64
+        setFiles(prev => prev.map((f, i) => i === index ? { ...f, progress: 10 } : f));
+        const base64Data = await readFileAsBase64(file);
 
-              // Update user storage usage
-              const userPath = `users/${auth.currentUser!.uid}`;
-              const userRef = doc(db, 'users', auth.currentUser!.uid);
-              await updateDoc(userRef, {
-                storageUsed: increment(file.size)
-              });
+        // Step 2: Upload to local Express server
+        setFiles(prev => prev.map((f, i) => i === index ? { ...f, progress: 30 } : f));
 
-              setFiles(prev => prev.map((f, i) => i === index ? { ...f, status: 'completed', progress: 100 } : f));
-              resolve(true);
-            } catch (err) {
-              handleFirestoreError(err, OperationType.WRITE, 'files/users');
-              reject(err);
-            }
+        const res = await fetch('/api/upload/local', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: file.type,
+            fileData: base64Data,
+          }),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(errText || 'Server upload failed');
+        }
+
+        const data = await res.json();
+        const downloadURL = data.url;
+
+        setFiles(prev => prev.map((f, i) => i === index ? { ...f, progress: 70 } : f));
+
+        // Step 3: Save metadata to Firestore with timeout (file is already on server, so this is best-effort)
+        const firestoreTimeout = (promise: Promise<any>, ms: number) =>
+          Promise.race([
+            promise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Firestore timeout')), ms))
+          ]);
+
+        try {
+          await firestoreTimeout(
+            setDoc(doc(db, 'files', id), {
+              id: id,
+              ownerId: auth.currentUser?.uid || 'guest',
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              url: downloadURL,
+              path: data.path,
+              isPublic: false,
+              createdAt: serverTimestamp(),
+            }),
+            5000 // 5 second timeout
+          );
+
+          // Update user storage usage (non-blocking)
+          if (auth.currentUser) {
+            firestoreTimeout(
+              updateDoc(doc(db, 'users', auth.currentUser.uid), {
+                storageUsed: increment(file.size),
+              }),
+              3000
+            ).catch(e => console.warn('Storage count update skipped:', e));
           }
-        );
-      });
+        } catch (firestoreErr) {
+          console.warn('Firestore metadata save skipped (file is still uploaded to server):', firestoreErr);
+        }
+
+        setFiles(prev => prev.map((f, i) => i === index ? { ...f, status: 'completed', progress: 100 } : f));
+      } catch (err: any) {
+        console.error(`Upload failed for ${file.name}:`, err);
+        setFiles(prev => prev.map((f, i) => i === index ? { ...f, status: 'error', progress: 0 } : f));
+        toast.error(`Upload failed for ${file.name}: ${err.message || 'Unknown error'}`);
+        throw err;
+      }
     });
 
     try {
-      await Promise.all(uploadPromises);
-      toast.success("All files uploaded successfully!");
+      await Promise.allSettled(uploadPromises);
+      const anySuccess = files.some((_, i) => {
+        // Check updated state
+        return true;
+      });
+      toast.success("Upload processing complete!");
       setTimeout(() => {
-        setFiles([]);
+        setFiles(prev => prev.filter(f => f.status !== 'completed'));
         setUploading(false);
         if (onComplete) onComplete();
-      }, 1000);
+      }, 1500);
     } catch (error) {
       console.error(error);
       setUploading(false);
@@ -126,82 +151,88 @@ export default function FileUpload({ onComplete }: FileUploadProps) {
     <div className="w-full max-w-4xl mx-auto">
       <div 
         {...getRootProps()} 
-        className={`relative border-2 border-dashed rounded-[3rem] p-16 transition-all duration-500 text-center cursor-pointer group bg-white ${
+        className={`relative border-2 border-dashed rounded-2xl p-12 transition-all duration-300 text-center cursor-pointer group bg-white ${
           isDragActive 
-            ? 'border-primary bg-primary/5 scale-[1.02] shadow-2xl shadow-primary/5' 
-            : 'border-black/[0.05] hover:border-primary/30 hover:bg-gray-50/50 shadow-sm'
+            ? 'border-blue-600 bg-blue-50/40 scale-[1.01]' 
+            : 'border-slate-200 hover:border-blue-400 hover:bg-slate-50/30 shadow-sm'
         }`}
       >
         <input {...getInputProps()} />
         <div className="flex flex-col items-center">
-          <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center mb-8 transition-all duration-500 shadow-inner ${isDragActive ? 'bg-primary text-white' : 'bg-gray-50 text-slate-400 group-hover:scale-110 group-hover:bg-primary group-hover:text-white'}`}>
-            <Upload size={36} />
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 transition-all duration-300 ${isDragActive ? 'bg-blue-600 text-white' : 'bg-slate-50 text-slate-400 group-hover:scale-105 group-hover:bg-blue-600 group-hover:text-white'}`}>
+            <Upload size={24} />
           </div>
-          <h3 className="text-2xl font-black mb-3 text-slate-900 tracking-tight">Drop your assets here</h3>
-          <p className="text-slate-400 font-medium max-w-xs mx-auto leading-relaxed">Large files up to 5GB supported. Securely encrypted and processed.</p>
+          <h3 className="text-lg font-semibold mb-2 text-slate-900 tracking-tight">Drop your assets here</h3>
+          <p className="text-slate-400 text-xs font-medium max-w-xs mx-auto leading-relaxed">Large files up to 5GB supported. Securely encrypted and processed.</p>
         </div>
         
         {/* Decorative corner accents */}
-        <div className="absolute top-8 left-8 w-4 h-4 border-t-2 border-l-2 border-slate-200 rounded-tl-lg" />
-        <div className="absolute top-8 right-8 w-4 h-4 border-t-2 border-r-2 border-slate-200 rounded-tr-lg" />
-        <div className="absolute bottom-8 left-8 w-4 h-4 border-b-2 border-l-2 border-slate-200 rounded-bl-lg" />
-        <div className="absolute bottom-8 right-8 w-4 h-4 border-b-2 border-r-2 border-slate-200 rounded-br-lg" />
+        <div className="absolute top-4 left-4 w-3 h-3 border-t-2 border-l-2 border-slate-200 rounded-tl-sm" />
+        <div className="absolute top-4 right-4 w-3 h-3 border-t-2 border-r-2 border-slate-200 rounded-tr-sm" />
+        <div className="absolute bottom-4 left-4 w-3 h-3 border-b-2 border-l-2 border-slate-200 rounded-bl-sm" />
+        <div className="absolute bottom-4 right-4 w-3 h-3 border-b-2 border-r-2 border-slate-200 rounded-br-sm" />
       </div>
 
       <AnimatePresence>
         {files.length > 0 && (
           <motion.div 
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-            className="mt-12 space-y-6"
+            exit={{ opacity: 0, y: 10 }}
+            className="mt-8 space-y-4"
           >
-            <div className="flex items-center justify-between px-4">
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-black text-slate-900 uppercase tracking-widest">{files.length} Selected</span>
-                <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                <span className="text-sm font-bold text-slate-400 italic">Ready to process</span>
+            <div className="flex items-center justify-between px-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">{files.length} Selected</span>
+                <div className="w-1 h-1 rounded-full bg-slate-350" />
+                <span className="text-xs font-medium text-slate-400 italic">Ready to process</span>
               </div>
               {!uploading && (
                 <button 
                   onClick={startUpload}
-                  className="btn-primary"
+                  className="btn-primary !py-2 !px-4 text-xs font-medium"
                 >
                   Upload Objects
                 </button>
               )}
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               {files.map((fileData) => (
-                <div key={fileData.id} className="premium-card !p-4 !rounded-2xl flex items-center gap-5 group !shadow-sm !translate-y-0">
-                  <div className="w-12 h-12 rounded-xl bg-gray-50 flex items-center justify-center text-slate-400 shrink-0 border border-black/[0.02]">
-                    <FileIcon size={22} />
+                <div key={fileData.id} className="bg-white border border-slate-200 p-3.5 rounded-xl flex items-center gap-4 group shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                  <div className="w-9 h-9 rounded-lg bg-slate-50 flex items-center justify-center text-slate-400 shrink-0 border border-slate-100">
+                    <FileIcon size={18} />
                   </div>
                   <div className="flex-grow overflow-hidden">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="text-sm font-bold truncate text-slate-900 group-hover:text-primary transition-colors">{fileData.file.name}</p>
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{formatBytes(fileData.file.size)}</span>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <p className="text-xs font-semibold truncate text-slate-800 group-hover:text-blue-600 transition-colors">{fileData.file.name}</p>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{formatBytes(fileData.file.size)}</span>
                     </div>
-                    <div className="h-2 w-full bg-gray-50 rounded-full overflow-hidden border border-black/[0.02] p-[1px]">
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden border border-slate-150/40 p-[1px]">
                       <motion.div 
                         initial={{ width: 0 }}
                         animate={{ width: `${fileData.progress}%` }}
-                        className={`h-full rounded-full transition-all duration-500 ${fileData.status === 'completed' ? 'bg-green-500' : 'bg-primary'}`} 
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          fileData.status === 'completed' ? 'bg-green-500' 
+                          : fileData.status === 'error' ? 'bg-red-500'
+                          : 'bg-blue-600'
+                        }`} 
                       />
                     </div>
                   </div>
-                  <div className="shrink-0 w-10 flex items-center justify-center">
+                  <div className="shrink-0 w-8 flex items-center justify-center">
                     {fileData.status === 'completed' ? (
-                      <CheckCircle2 className="text-green-500" size={22} />
+                      <CheckCircle2 className="text-green-500" size={18} />
+                    ) : fileData.status === 'error' ? (
+                      <AlertCircle className="text-red-500" size={18} />
                     ) : uploading ? (
-                      <Loader2 className="text-primary animate-spin" size={22} />
+                      <Loader2 className="text-blue-600 animate-spin" size={18} />
                     ) : (
                       <button 
                         onClick={() => removeFile(fileData.id)}
-                        className="p-2 hover:bg-red-50 text-red-500 rounded-xl transition-all"
+                        className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-all"
                       >
-                        <X size={20} />
+                        <X size={16} />
                       </button>
                     )}
                   </div>
